@@ -113,7 +113,22 @@ if __name__ == "__main__":
     parser.add('--display',
         help='if show reconstructed point cloud.',
         default=False) 
+    
+    parser.add('--ip',
+        help='ip address to upload result.',
+        default='192.168.1.35')
 
+    parser.add('--port',
+        help='FTP port to upload result.',
+        default='22')
+
+    parser.add('--username',
+        help='username to ligin server.',
+        default='nathans')
+    
+    parser.add('--password',
+        help='password to login server.',
+        default='nathans')
 
     args = parser.get_config()
 
@@ -305,7 +320,7 @@ if __name__ == "__main__":
                 if args.upload:
                     ssh = paramiko.SSHClient()
                     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    ssh.connect('162.208.132.238', username='nathans', password='nathans')
+                    ssh.connect(args.ip, username=args.username, password=args.password)
                     sftp = ssh.open_sftp()
                     sftp.put(args.path_ply, '/mnt/output.ply')
                     sftp.close()
