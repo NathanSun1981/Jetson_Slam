@@ -48,8 +48,8 @@ def get_profiles():
     for device in devices:
         name = device.get_info(rs.camera_info.name)
         serial = device.get_info(rs.camera_info.serial_number)
-        print('Sensor: {}, {}'.format(name, serial))
-        print('Supported video formats:')
+        #print('Sensor: {}, {}'.format(name, serial))
+        #print('Supported video formats:')
         for sensor in device.query_sensors():
             for stream_profile in sensor.get_stream_profiles():
                 stream_type = str(stream_profile.stream_type())

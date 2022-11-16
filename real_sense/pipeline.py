@@ -84,9 +84,7 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, handler)
 
-    
-
-     
+  
     parser = ConfigParser()
     parser.add(
         '--config',
@@ -112,6 +110,11 @@ if __name__ == "__main__":
         help='path to the npz file that stores voxel block grid.',
         default=False) 
 
+    parser.add('--display',
+        help='if show reconstructed point cloud.',
+        default=False) 
+
+
     args = parser.get_config()
 
     if sum(o is not False for o in vars(args).values()) != 2:
@@ -134,18 +137,21 @@ if __name__ == "__main__":
     #  different resolutions of color and depth streams
     config = rs.config()
 
-    color_profiles, depth_profiles = get_profiles()
+    #color_profiles, depth_profiles = get_profiles()
 
 
+    
+    # note: using 640 x 480 depth resolution produces smooth depth boundaries
+    #       using rs.format.bgr8 for color image format for OpenCV based image visualization
+    """ print('Using the default profiles: \n  color:{}, depth:{}'.format(
+        color_profiles[30], depth_profiles[1]))
+    w, h, fps, fmt = depth_profiles[1]
+    config.enable_stream(rs.stream.depth, w, h, fmt, fps)
+    w, h, fps, fmt = color_profiles[30]
+    config.enable_stream(rs.stream.color, w, h, fmt, fps) """
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 15)
     if args.record_rosbag:
-        # note: using 640 x 480 depth resolution produces smooth depth boundaries
-        #       using rs.format.bgr8 for color image format for OpenCV based image visualization
-        print('Using the default profiles: \n  color:{}, depth:{}'.format(
-            color_profiles[30], depth_profiles[1]))
-        w, h, fps, fmt = depth_profiles[1]
-        config.enable_stream(rs.stream.depth, w, h, fmt, fps)
-        w, h, fps, fmt = color_profiles[30]
-        config.enable_stream(rs.stream.color, w, h, fmt, fps)
         config.enable_record_to_file(path_bag)
 
     # Start streaming
@@ -171,6 +177,8 @@ if __name__ == "__main__":
     align = rs.align(align_to)
 
     device = o3d.core.Device(args.device)
+    print(args.device)
+    print(o3d.core.cuda.is_available())
     T_frame_to_model = o3d.core.Tensor(np.identity(4))
     model = o3d.t.pipelines.slam.Model(args.voxel_size, 16,
                                             args.block_count, T_frame_to_model,
@@ -291,7 +299,8 @@ if __name__ == "__main__":
                 o3d.t.io.write_point_cloud(args.path_ply, pc)
                 save_poses('output.log', poses)
                 print('Saving finished')
-                #o3d.visualization.draw([pc])
+                if args.display:
+                    o3d.visualization.draw([pc])
 
                 if args.upload:
                     ssh = paramiko.SSHClient()
