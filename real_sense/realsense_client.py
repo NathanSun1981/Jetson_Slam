@@ -1,7 +1,6 @@
 #!/usr/bin/python
-import argparse
+
 import asyncore
-import getopt
 import json
 import os
 import pickle
@@ -9,14 +8,15 @@ import socket
 import struct
 import sys
 import time
-from calendar import TUESDAY
-from re import I
+
+import open3d.core as o3c
+import open3d.visualization.gui as gui
+import open3d.visualization.rendering as rendering
+
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
-import pyrealsense2 as rs
 from common import (extract_rgbd_frames, extract_trianglemesh,
                     get_default_dataset, load_intrinsic, load_rgbd_file_names,
                     save_poses)
@@ -60,9 +60,6 @@ class SlamClient(asyncore.dispatcher):
 
         cv2.namedWindow("window_RGB"+str(self.windowName))
         #cv2.namedWindow("window_Gray"+str(self.windowName))
-
-        self.vis = o3d.visualization.Visualizer()
-        self.vis.create_window()
         #GLFW_KEY https://www.glfw.org/docs/latest/group__keys.html#ga4d7f0260c82e4ea3d6ebc7a21d6e3716
         self.geometry_added = False
 
@@ -106,108 +103,81 @@ class SlamClient(asyncore.dispatcher):
         imdata = pickle.loads(self.buffer[:self.frame_length])
         graydata = pickle.loads(self.buffer[self.frame_length:])
 
-        if self.pc_flag == 1:
-            cv2.destroyAllWindows()
-            self.pcd.points = o3d.utility.Vector3dVector(imdata[:, 0:3])
-            self.pcd.colors = o3d.utility.Vector3dVector(imdata[:, 3:6])
-            if self.frame_id == 0:
-                self.vis.add_geometry(self.pcd)
-
-            self.vis.update_geometry(self.pcd)
-            self.vis.poll_events()
-            self.vis.update_renderer()
-            
-        else:
-            bigDepth = cv2.resize(imdata, (0,0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST) 
-            cv2.putText(bigDepth, str(self.timestamp), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (65536), 2, cv2.LINE_AA)
-            print(imdata.shape)
-
-
-            #start slam on every fram
-            color_ref = o3d.t.geometry.Image(imdata.astype(np.uint8))
-            depth_ref = o3d.t.geometry.Image(graydata.astype(np.uint16))
-            depth = depth_ref.to(self.device)
-            color = color_ref.to(self.device) 
-
-            color_img = o3d.geometry.Image(imdata.astype(np.uint8))
-            depth_img = o3d.geometry.Image(graydata.astype(np.uint16))
-
-            start = time.time()
-            
-            if self.frame_id == 0:
-                self.intrinsic = load_intrinsic(self.config)
-                self.poses = []
-
-                self.input_frame = o3d.t.pipelines.slam.Frame(depth_ref.rows, depth_ref.columns,
-                                                        self.intrinsic, self.device)
-                self.raycast_frame = o3d.t.pipelines.slam.Frame(depth_ref.rows,
-                                                        depth_ref.columns, self.intrinsic,
-                                                        self.device)
-                self.raycast_frame.set_data_from_image('depth', depth)
-                self.raycast_frame.set_data_from_image('color', color)     
  
-            self.input_frame.set_data_from_image('depth', depth)
-            self.input_frame.set_data_from_image('color', color)  
-
-            try:
-                if self.frame_id > 0:
-                    
-                    result = self.model.track_frame_to_model(self.input_frame, self.raycast_frame,
-                                                        self.config.depth_scale,
-                                                        self.config.depth_max,
-                                                        self.config.odometry_distance_thr)
-                    self.T_frame_to_model = self.T_frame_to_model @ result.transformation
-
-                self.poses.append(self.T_frame_to_model.cpu().numpy())
-                self.model.update_frame_pose(self.frame_id, self.T_frame_to_model)
-                self.model.integrate(self.input_frame, self.config.depth_scale, self.config.depth_max,
-                                self.config.trunc_voxel_multiplier)
-                self.model.synthesize_model_frame(self.raycast_frame, self.config.depth_scale,
-                                            self.config.depth_min, self.config.depth_max,
-                                            self.config.trunc_voxel_multiplier, False)
-                stop = time.time()
-                print('{:04d} slam takes {:.4}s'.format(self.frame_id, stop - start))    
+        bigDepth = cv2.resize(imdata, (0,0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST) 
+        cv2.putText(bigDepth, str(self.timestamp), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (65536), 2, cv2.LINE_AA)
+        print(imdata.shape)
 
 
-                pc = self.model.extract_pointcloud().transform(self.flip_transform)
-                pcd = pc.to_legacy()
+        #start slam on every fram
+        color_ref = o3d.t.geometry.Image(imdata.astype(np.uint8))
+        depth_ref = o3d.t.geometry.Image(graydata.astype(np.uint16))
+        depth = depth_ref.to(self.device)
+        color = color_ref.to(self.device) 
 
+        color_img = o3d.geometry.Image(imdata.astype(np.uint8))
+        depth_img = o3d.geometry.Image(graydata.astype(np.uint16))
 
-                """ if pcd.has_points():
-                    self.vis.add_geometry(pcd)
-                    self.vis.poll_events()
-                    self.vis.update_renderer() """
-
-          
-            except:
-                print("Unexpected error: ", sys.exc_info()[1])
-                
-            #clipping_distance = self.config.clipping_distance_in_meters / self.config.depth_scale
-            #intrinsic = o3d.io.read_pinhole_camera_intrinsic(self.config.path_intrinsic)
-
-            
+        start = time.time()
         
-            cv2.imshow("window_RGB"+str(self.windowName), imdata)
+        if self.frame_id == 0:
+            self.intrinsic = load_intrinsic(self.config)
+            self.poses = []
 
-            key = cv2.waitKey(1)
-            # if 'esc' button pressed, escape loop and exit program
-            if key == 27:
-                cv2.destroyAllWindows()
-                #process model
-                if os.path.exists(self.config.path_npz):
-                    os.remove(self.config.path_npz)
+            self.input_frame = o3d.t.pipelines.slam.Frame(depth_ref.rows, depth_ref.columns,
+                                                    self.intrinsic, self.device)
+            self.raycast_frame = o3d.t.pipelines.slam.Frame(depth_ref.rows,
+                                                    depth_ref.columns, self.intrinsic,
+                                                    self.device)
+            self.raycast_frame.set_data_from_image('depth', depth)
+            self.raycast_frame.set_data_from_image('color', color)     
 
-                pc = self.model.extract_pointcloud().transform(self.flip_transform)
-                print('Saving to {} and {}...'.format(self.config.path_npz, self.config.path_ply) )
-                self.model.voxel_grid.save(self.config.path_npz)
-                o3d.io.write_point_cloud(self.config.path_ply, pc.to_legacy())
-                save_poses('output.log', self.poses)
-                print('Saving finished')
-                o3d.visualization.draw(pc.to_legacy())
-                self.vis.destroy_window()
+        self.input_frame.set_data_from_image('depth', depth)
+        self.input_frame.set_data_from_image('color', color)  
+
+        try:
+            if self.frame_id > 0:
                 
-                exit()
+                result = self.model.track_frame_to_model(self.input_frame, self.raycast_frame,
+                                                    self.config.depth_scale,
+                                                    self.config.depth_max,
+                                                    self.config.odometry_distance_thr)
+                self.T_frame_to_model = self.T_frame_to_model @ result.transformation
+
+            self.poses.append(self.T_frame_to_model.cpu().numpy())
+            self.model.update_frame_pose(self.frame_id, self.T_frame_to_model)
+            self.model.integrate(self.input_frame, self.config.depth_scale, self.config.depth_max,
+                            self.config.trunc_voxel_multiplier)
+            self.model.synthesize_model_frame(self.raycast_frame, self.config.depth_scale,
+                                        self.config.depth_min, self.config.depth_max,
+                                        self.config.trunc_voxel_multiplier, False)
+            stop = time.time()
+            print('{:04d} slam takes {:.4}s'.format(self.frame_id, stop - start))    
+        
+        except:
+            print("Unexpected error: ", sys.exc_info()[1])
+
+        cv2.imshow("window_RGB"+str(self.windowName), imdata)
+
+        key = cv2.waitKey(1)
+        # if 'esc' button pressed, escape loop and exit program
+        if key == 27:
+            cv2.destroyAllWindows()
+            #process model
+            if os.path.exists(self.config.path_npz):
+                os.remove(self.config.path_npz)
+
+            pc = self.model.extract_pointcloud().transform(self.flip_transform)
+            print('Saving to {} and {}...'.format(self.config.path_npz, self.config.path_ply) )
+            self.model.voxel_grid.save(self.config.path_npz)
+            o3d.io.write_point_cloud(self.config.path_ply, pc.to_legacy())
+            save_poses('output.log', self.poses)
+            print('Saving finished')
+            o3d.visualization.draw(pc.to_legacy())
+            self.vis.destroy_window()
             
+            exit()
+        
 
 
         self.buffer = bytearray()

@@ -104,10 +104,12 @@ def extract_rgbd_frames(rgbd_video_file):
 
 def lounge_dataloader(config):
     # Get the dataset.
-    lounge_rgbd = o3d.data.LoungeRGBDImages()
+    #lounge_rgbd = o3d.data.LoungeRGBDImages()
     # Override default config parameters with dataset specific parameters.
-    config.path_dataset = lounge_rgbd.extract_dir
-    config.path_trajectory = lounge_rgbd.trajectory_log_path
+    """ config.path_dataset = lounge_rgbd.extract_dir
+    config.path_trajectory = lounge_rgbd.trajectory_log_path """
+    config.path_dataset = './dataset/LoungeRGBDImages'
+    config.path_trajectory = './dataset/LoungeRGBDImages/lounge_trajectory.log'
     config.depth_folder = "depth"
     config.color_folder = "color"
     return config
@@ -282,6 +284,7 @@ def extract_pointcloud(volume, config, file_name=None):
 
 
 def extract_trianglemesh(volume, config, file_name=None):
+    flip_transform = [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]
     if config.engine == 'legacy':
         mesh = volume.extract_triangle_mesh()
         mesh.compute_vertex_normals()
@@ -295,6 +298,6 @@ def extract_trianglemesh(volume, config, file_name=None):
         mesh = mesh.to_legacy()
 
         if file_name is not None:
-            o3d.io.write_triangle_mesh(file_name, mesh)
+            o3d.io.write_triangle_mesh(file_name, mesh.transform(flip_transform))
 
     return mesh
